@@ -1,0 +1,647 @@
+// prisma/schema.prisma
+// AIJewel CRM - Complete Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTHENTICATION & USERS
+// ============================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // bcrypt hashed
+  firstName String
+  lastName  String
+  phone     String?
+  avatar    String?
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id])
+  
+  // Relations
+  leads       Lead[]
+  campaigns   Campaign[]
+  calls       Call[]
+  meetings    Meeting[]
+  auditLogs   AuditLog[]
+  
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([roleId])
+  @@index([email])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique // ADMIN, MARKETING_MANAGER, etc
+  description String?
+  users       User[]
+  permissions Permission[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Permission {
+  id    String @id @default(cuid())
+  name  String @unique // lead.create, campaign.delete, etc
+  roles Role[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// LEADS & CUSTOMERS
+// ============================================
+
+model Lead {
+  id                String   @id @default(cuid())
+  name              String
+  phone             String
+  whatsappPhone     String?
+  email             String?
+  shopName          String?
+  location          String?
+  
+  // Lead properties
+  status            LeadStatus @default(NEW)
+  source            LeadSource
+  categoryId        String?
+  category          LeadCategory? @relation(fields: [categoryId], references: [id])
+  tags              LeadTag[]
+  
+  // Assignment
+  assignedToId      String?
+  assignedTo        User? @relation(fields: [assignedToId], references: [id])
+  
+  // Follow-up
+  lastContacted     DateTime?
+  nextFollowUp      DateTime?
+  previousEnquiry   String?
+  
+  // Relations
+  customer          Customer?
+  notes             Note[]
+  conversations     WhatsAppConversation[]
+  calls             Call[]
+  meetings          Meeting[]
+  followUps         FollowUp[]
+  campaignRecipients CampaignRecipient[]
+  aiConversations   AIConversation[]
+  timeline          LeadTimeline[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([status])
+  @@index([source])
+  @@index([phone])
+  @@index([assignedToId])
+  @@index([createdAt])
+}
+
+model LeadStatus {
+  NEW              String @default("NEW")
+  CONTACTED        String @default("CONTACTED")
+  QUALIFIED        String @default("QUALIFIED")
+  MEETING_SCHEDULED String @default("MEETING_SCHEDULED")
+  FOLLOW_UP        String @default("FOLLOW_UP")
+  CONVERTED        String @default("CONVERTED")
+  LOST             String @default("LOST")
+}
+
+model LeadSource {
+  id          String   @id @default(cuid())
+  name        String   @unique // WHATSAPP_GROUP, META_ADS, MANUAL, etc
+  description String?
+  leads       Lead[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LeadCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  leads       Lead[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LeadTag {
+  id    String @id @default(cuid())
+  name  String @unique
+  leads Lead[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Note {
+  id      String @id @default(cuid())
+  content String
+  leadId  String
+  lead    Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+}
+
+model LeadTimeline {
+  id      String @id @default(cuid())
+  leadId  String
+  lead    Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  action  String // "lead_created", "message_sent", etc
+  details String? // JSON string with details
+  
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([createdAt])
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  leadId      String   @unique
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  contactPerson String?
+  shopPhone     String?
+  gstNumber     String?
+  address       String?
+  city          String?
+  state         String?
+  pincode       String?
+  country       String? @default("India")
+  
+  // Preferences
+  communicationPreference String? @default("WHATSAPP")
+  consentMarketing        Boolean @default(false)
+  consentCalls            Boolean @default(false)
+  
+  // Relations
+  contacts      Contact[]
+  conversations WhatsAppConversation[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Contact {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  name        String
+  phone       String
+  email       String?
+  designation String?
+  isDecisionMaker Boolean @default(false)
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([customerId])
+}
+
+// ============================================
+// WHATSAPP
+// ============================================
+
+model WhatsAppContact {
+  id          String   @id @default(cuid())
+  phone       String   @unique
+  name        String
+  profilePic  String?
+  status      String?  // ACTIVE, INACTIVE
+  lastSeen    DateTime?
+  source      String   @default("MANUAL") // WHATSAPP_GROUP, MANUAL, etc
+  groupId     String?
+  group       WhatsAppGroup? @relation(fields: [groupId], references: [id])
+  
+  // Relations
+  conversations WhatsAppConversation[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([phone])
+  @@index([source])
+}
+
+model WhatsAppGroup {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  icon        String?
+  memberCount Int      @default(0)
+  contacts    WhatsAppContact[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model WhatsAppConversation {
+  id          String   @id @default(cuid())
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  leadId      String?
+  lead        Lead? @relation(fields: [leadId], references: [id])
+  contactId   String?
+  contact     WhatsAppContact? @relation(fields: [contactId], references: [id])
+  
+  lastMessage String?
+  lastMessageTime DateTime?
+  unreadCount Int      @default(0)
+  isArchived  Boolean  @default(false)
+  isStarred   Boolean  @default(false)
+  
+  messages    WhatsAppMessage[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([contactId])
+}
+
+model WhatsAppMessage {
+  id              String   @id @default(cuid())
+  conversationId  String
+  conversation    WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  type            String   @default("TEXT") // TEXT, IMAGE, VIDEO, DOCUMENT, VOICE
+  content         String
+  mediaUrl        String?
+  mediaType       String?
+  
+  direction       String   @default("INCOMING") // INCOMING, OUTGOING
+  sender          String
+  
+  status          String   @default("SENT") // SENT, DELIVERED, READ, FAILED
+  timestamp       DateTime @default(now())
+  
+  isStarred       Boolean  @default(false)
+  isRepliedTo     String?  // ID of message this replies to
+  
+  createdAt DateTime  @default(now())
+
+  @@index([conversationId])
+  @@index([timestamp])
+}
+
+// ============================================
+// CAMPAIGNS & MARKETING
+// ============================================
+
+model Campaign {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  
+  type        String   @default("WHATSAPP") // WHATSAPP, META, SMS, EMAIL
+  objective   String?
+  platform    String?  // FACEBOOK, INSTAGRAM, WHATSAPP
+  
+  status      String   @default("DRAFT") // DRAFT, REVIEW, APPROVED, SCHEDULED, RUNNING, COMPLETED, FAILED
+  
+  content     String   // Main message/content
+  template    String?  // With variables like {{name}}, {{shop_name}}
+  
+  // Scheduling
+  scheduledAt DateTime?
+  startDate   DateTime?
+  endDate     DateTime?
+  
+  // Budget & targeting
+  budget      Float?
+  currency    String?  @default("INR")
+  targetAudience String? // JSON
+  
+  // Relations
+  createdById String
+  createdBy   User    @relation(fields: [createdById], references: [id])
+  messages    CampaignMessage[]
+  recipients  CampaignRecipient[]
+  metrics     CampaignMetric[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdById])
+  @@index([scheduledAt])
+}
+
+model CampaignMessage {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  recipientId String
+  recipient   CampaignRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  
+  personalizedContent String // After variable replacement
+  status      String   @default("PENDING") // PENDING, SENT, DELIVERED, FAILED
+  error       String?
+  
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([campaignId])
+  @@index([recipientId])
+}
+
+model CampaignRecipient {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  leadId      String
+  lead        Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  status      String   @default("PENDING") // PENDING, SENT, DELIVERED, CLICKED, CONVERTED
+  messages    CampaignMessage[]
+  
+  createdAt DateTime  @default(now())
+
+  @@index([campaignId])
+  @@index([leadId])
+}
+
+model CampaignMetric {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  totalSent   Int      @default(0)
+  delivered   Int      @default(0)
+  failed      Int      @default(0)
+  clicks      Int      @default(0)
+  conversions Int      @default(0)
+  spend       Float    @default(0)
+  impressions Int      @default(0)
+  reach       Int      @default(0)
+  ctr         Float    @default(0) // Click Through Rate
+  cpl         Float    @default(0) // Cost Per Lead
+  
+  updatedAt DateTime  @updatedAt
+}
+
+// ============================================
+// CALLS & RECORDINGS
+// ============================================
+
+model Call {
+  id          String   @id @default(cuid())
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  leadId      String?
+  lead        Lead? @relation(fields: [leadId], references: [id])
+  
+  agentId     String?
+  agent       User? @relation(fields: [agentId], references: [id])
+  
+  type        String   @default("VOICE") // VOICE, VIDEO
+  direction   String   @default("OUTGOING") // INCOMING, OUTGOING
+  
+  status      String   @default("INITIATED") // INITIATED, RINGING, CONNECTED, ENDED, MISSED, FAILED
+  startTime   DateTime?
+  endTime     DateTime?
+  duration    Int      @default(0) // in seconds
+  
+  recording   CallRecording?
+  notes       String?
+  outcome     String? // POSITIVE, NEGATIVE, NEUTRAL, FOLLOW_UP_NEEDED
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([leadId])
+  @@index([agentId])
+  @@index([createdAt])
+}
+
+model CallRecording {
+  id          String   @id @default(cuid())
+  callId      String   @unique
+  call        Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  
+  filePath    String   // Local file path or S3 URL
+  fileSize    Int      @default(0)
+  duration    Int      @default(0)
+  format      String   @default("mp3")
+  
+  transcript  CallTranscript?
+  
+  createdAt DateTime  @default(now())
+}
+
+model CallTranscript {
+  id          String   @id @default(cuid())
+  recordingId String   @unique
+  recording   CallRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  
+  content     String   // Full transcript
+  summary     String?  // AI summary
+  confidence  Float    @default(0) // Confidence score
+  language    String   @default("en-IN")
+  
+  createdAt DateTime  @default(now())
+}
+
+// ============================================
+// MEETINGS & CALENDAR
+// ============================================
+
+model Meeting {
+  id          String   @id @default(cuid())
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  leadId      String?
+  lead        Lead? @relation(fields: [leadId], references: [id])
+  
+  organizerId String
+  organizer   User @relation(fields: [organizerId], references: [id])
+  
+  title       String
+  description String?
+  
+  startTime   DateTime
+  endTime     DateTime
+  duration    Int      @default(60) // in minutes
+  
+  status      String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  location    String?
+  meetingLink String?
+  
+  notes       String?
+  outcome     String?  // POSITIVE, NEGATIVE, NEUTRAL, FOLLOW_UP
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([leadId])
+  @@index([organizerId])
+  @@index([startTime])
+}
+
+// ============================================
+// KNOWLEDGE BASE & AI
+// ============================================
+
+model KnowledgeBase {
+  id          String   @id @default(cuid())
+  category    String   // COMPANY, PRODUCT, PRICING, FAQ, SUPPORT, WARRANTY, DEMO, SALES
+  title       String
+  content     String
+  tags        String?  // Comma-separated
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0)
+  
+  documents   KnowledgeBaseDocument[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([category])
+  @@index([isActive])
+}
+
+model KnowledgeBaseDocument {
+  id            String   @id @default(cuid())
+  knowledgeId   String
+  knowledge     KnowledgeBase @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+  
+  title         String
+  content       String
+  filePath      String?
+  fileType      String?
+  
+  createdAt DateTime  @default(now())
+
+  @@index([knowledgeId])
+}
+
+model AIConversation {
+  id          String   @id @default(cuid())
+  leadId      String?
+  lead        Lead? @relation(fields: [leadId], references: [id])
+  
+  topic       String?
+  status      String   @default("ACTIVE") // ACTIVE, RESOLVED, ESCALATED
+  confidence  Float    @default(0) // AI confidence
+  
+  messages    AIMessage[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([leadId])
+}
+
+model AIMessage {
+  id              String   @id @default(cuid())
+  conversationId  String
+  conversation    AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  role            String   // USER, ASSISTANT
+  content         String
+  confidence      Float    @default(0)
+  usedKnowledge   String?  // References to knowledge base items
+  
+  createdAt DateTime  @default(now())
+
+  @@index([conversationId])
+}
+
+// ============================================
+// FOLLOW-UPS
+// ============================================
+
+model FollowUp {
+  id          String   @id @default(cuid())
+  leadId      String
+  lead        Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  dueDate     DateTime
+  type        String   @default("CALL") // CALL, EMAIL, WHATSAPP, MEETING
+  description String
+  priority    String   @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  
+  status      String   @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  completedAt DateTime?
+  completedBy String?
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([leadId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String?
+  title       String
+  message     String
+  type        String   // NEW_LEAD, MESSAGE, CALL, MEETING, CAMPAIGN, etc
+  relatedId   String?  // ID of related entity
+  isRead      Boolean  @default(false)
+  
+  createdAt DateTime  @default(now())
+  readAt      DateTime?
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ============================================
+// AUDIT LOGS
+// ============================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User @relation(fields: [userId], references: [id])
+  
+  action      String   // CREATE, UPDATE, DELETE, LOGIN, etc
+  entity      String   // Lead, Campaign, User, etc
+  entityId    String   // ID of the entity
+  
+  beforeData  String?  // JSON
+  afterData   String?  // JSON
+  
+  ipAddress   String?
+  userAgent   String?
+  
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([entityId])
+  @@index([createdAt])
+}
