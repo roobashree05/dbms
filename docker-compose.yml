@@ -1,0 +1,46 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: aijewel_postgres
+    environment:
+      POSTGRES_USER: aijewel
+      POSTGRES_PASSWORD: aijewel123
+      POSTGRES_DB: aijewel_crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aijewel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aijewel_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: aijewel_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aijewel_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  aijewel_network:
+    driver: bridge

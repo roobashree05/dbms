@@ -1,0 +1,38 @@
+{
+  "name": "aijewel-crm",
+  "version": "1.0.0",
+  "description": "AIJewel CRM - Complete Lead Management & Communication Platform",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "turbo run test:e2e",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "db:migrate": "cd apps/api && prisma migrate dev",
+    "db:seed": "cd apps/api && node prisma/seed.js",
+    "db:studio": "cd apps/api && prisma studio",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:reset": "docker compose down -v && docker compose up -d",
+    "setup": "npm install && docker compose up -d && npm run db:migrate && npm run db:seed",
+    "clean": "turbo run clean"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "turbo": "^1.13.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
